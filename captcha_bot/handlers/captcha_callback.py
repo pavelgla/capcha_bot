@@ -4,20 +4,19 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
-from config import Settings
 from handlers.new_member import cancel_timeout
 from services.mute_manager import unmute_user
-from services.storage import Storage
+from services.storage import DEFAULT_CHAT_CONFIG, Storage
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 
-def _build_keyboard(user_id: int, options: list) -> InlineKeyboardMarkup:
+def _build_keyboard(chat_id: int, user_id: int, options: list) -> InlineKeyboardMarkup:
     buttons = [
         InlineKeyboardButton(
             text=str(opt),
-            callback_data=f"captcha:{user_id}:{opt}",
+            callback_data=f"captcha:{chat_id}:{user_id}:{opt}",
         )
         for opt in options
     ]
@@ -37,14 +36,15 @@ async def on_captcha_answer(
     callback: CallbackQuery,
     bot: Bot,
     storage: Storage,
-    settings: Settings,
 ) -> None:
+    # Format: captcha:<chat_id>:<user_id>:<answer>
     parts = callback.data.split(":")
-    if len(parts) != 3:
+    if len(parts) != 4:
         await callback.answer("Неверный формат.", show_alert=False)
         return
 
-    _, target_id_str, answer_str = parts
+    _, chat_id_str, target_id_str, answer_str = parts
+    chat_id = int(chat_id_str)
     target_user_id = int(target_id_str)
     answer = int(answer_str)
 
@@ -53,12 +53,11 @@ async def on_captcha_answer(
         await callback.answer("Эта проверка не для вас.", show_alert=True)
         return
 
-    captcha_data = await storage.get_captcha(target_user_id)
+    captcha_data = await storage.get_captcha(chat_id, target_user_id)
     if captcha_data is None:
         await callback.answer("Время вышло.", show_alert=True)
         return
 
-    chat_id = callback.message.chat.id
     message_id = callback.message.message_id
     mention = (
         f"@{callback.from_user.username}"
@@ -68,7 +67,7 @@ async def on_captcha_answer(
 
     if answer == captcha_data["correct_answer"]:
         # ── Correct ──────────────────────────────────────────────────────────
-        cancel_timeout(target_user_id)
+        cancel_timeout(chat_id, target_user_id)
         await unmute_user(bot, chat_id, target_user_id)
 
         try:
@@ -76,7 +75,7 @@ async def on_captcha_answer(
         except Exception as exc:
             logger.warning("Could not delete captcha message: %s", exc)
 
-        await storage.delete_captcha(target_user_id)
+        await storage.delete_captcha(chat_id, target_user_id)
 
         try:
             ok_msg = await bot.send_message(chat_id, f"✅ {mention} прошёл(а) проверку!")
@@ -91,14 +90,17 @@ async def on_captcha_answer(
         captcha_data["attempts_left"] -= 1
 
         if captcha_data["attempts_left"] > 0:
-            await storage.save_captcha(target_user_id, captcha_data, ttl=settings.captcha_timeout)
+            # Reload timeout from chat config for TTL refresh
+            chat_cfg = await storage.get_chat_config(chat_id) or DEFAULT_CHAT_CONFIG
+            timeout: int = chat_cfg["captcha_timeout"]
+            await storage.save_captcha(chat_id, target_user_id, captcha_data, ttl=timeout)
 
             try:
                 new_text = (
                     f"❌ Неверно. Осталось попыток: {captcha_data['attempts_left']}\n\n"
                     f"{captcha_data['task_text']}"
                 )
-                keyboard = _build_keyboard(target_user_id, captcha_data["options"])
+                keyboard = _build_keyboard(chat_id, target_user_id, captcha_data["options"])
                 await callback.message.edit_text(new_text, reply_markup=keyboard)
             except Exception as exc:
                 logger.warning("Could not edit captcha message: %s", exc)
@@ -107,7 +109,7 @@ async def on_captcha_answer(
 
         else:
             # ── Out of attempts ───────────────────────────────────────────────
-            cancel_timeout(target_user_id)
+            cancel_timeout(chat_id, target_user_id)
 
             try:
                 await bot.delete_message(chat_id, message_id)
@@ -115,7 +117,7 @@ async def on_captcha_answer(
                 logger.warning("Could not delete captcha message: %s", exc)
 
             await storage.set_muted_forever(target_user_id)
-            await storage.delete_captcha(target_user_id)
+            await storage.delete_captcha(chat_id, target_user_id)
 
             try:
                 fail_msg = await bot.send_message(

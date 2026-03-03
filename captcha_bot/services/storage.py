@@ -6,6 +6,12 @@ import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CHAT_CONFIG: Dict[str, Any] = {
+    "captcha_timeout": 300,
+    "captcha_attempts": 2,
+    "enabled": True,
+}
+
 
 class Storage:
     """
@@ -80,17 +86,38 @@ class Storage:
             logger.error("Redis KEYS error: %s", exc)
             return []
 
-    # ── Captcha ──────────────────────────────────────────────────────────────
+    # ── Chat config ──────────────────────────────────────────────────────────
 
-    async def save_captcha(self, user_id: int, data: Dict[str, Any], ttl: int) -> None:
-        await self.set(f"captcha:{user_id}", json.dumps(data), ex=ttl)
+    async def save_chat_config(self, chat_id: int, config: Dict[str, Any]) -> None:
+        await self.set(f"chat_config:{chat_id}", json.dumps(config))
 
-    async def get_captcha(self, user_id: int) -> Optional[Dict[str, Any]]:
-        raw = await self.get(f"captcha:{user_id}")
+    async def get_chat_config(self, chat_id: int) -> Optional[Dict[str, Any]]:
+        raw = await self.get(f"chat_config:{chat_id}")
         return json.loads(raw) if raw else None
 
-    async def delete_captcha(self, user_id: int) -> None:
-        await self.delete(f"captcha:{user_id}")
+    async def delete_chat_config(self, chat_id: int) -> None:
+        await self.delete(f"chat_config:{chat_id}")
+
+    async def is_chat_configured(self, chat_id: int) -> bool:
+        return await self.exists(f"chat_config:{chat_id}")
+
+    async def get_all_configured_chats(self) -> List[int]:
+        ks = await self.keys("chat_config:*")
+        return [int(k.split(":", 1)[1]) for k in ks]
+
+    # ── Captcha (composite key: chat_id + user_id) ───────────────────────────
+
+    async def save_captcha(
+        self, chat_id: int, user_id: int, data: Dict[str, Any], ttl: int
+    ) -> None:
+        await self.set(f"captcha:{chat_id}:{user_id}", json.dumps(data), ex=ttl)
+
+    async def get_captcha(self, chat_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+        raw = await self.get(f"captcha:{chat_id}:{user_id}")
+        return json.loads(raw) if raw else None
+
+    async def delete_captcha(self, chat_id: int, user_id: int) -> None:
+        await self.delete(f"captcha:{chat_id}:{user_id}")
 
     # ── Permanent mute ───────────────────────────────────────────────────────
 

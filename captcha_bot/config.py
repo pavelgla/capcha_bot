@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
@@ -6,7 +6,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     bot_token: str
-    chat_id: int
+    # Optional: if set, bot auto-configures this chat on startup (backward compat)
+    chat_id: Optional[int] = None
     admin_ids: List[int] = []
     captcha_timeout: int = 300
     captcha_attempts: int = 2
