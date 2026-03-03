@@ -12,13 +12,25 @@ class Settings(BaseSettings):
     captcha_attempts: int = 2
     redis_url: str = "redis://redis:6379"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "env_ignore_empty": True,  # empty ADMIN_IDS= → use default []
+    }
 
     @field_validator("admin_ids", mode="before")
     @classmethod
     def parse_admin_ids(cls, v: object) -> List[int]:
-        if isinstance(v, str):
-            return [int(x.strip()) for x in v.split(",") if x.strip()]
-        if isinstance(v, int):
+        if isinstance(v, list):           # already decoded JSON array
+            return [int(x) for x in v]
+        if isinstance(v, int):            # single int from JSON decode
             return [v]
-        return v  # type: ignore[return-value]
+        if isinstance(v, str):
+            v = v.strip()
+            if not v or v == "[]":
+                return []
+            if v.startswith("["):         # "[123,456]" format
+                import json
+                return [int(x) for x in json.loads(v)]
+            return [int(x.strip()) for x in v.split(",") if x.strip()]
+        return []
