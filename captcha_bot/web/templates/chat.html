@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Чат {{ chat_id }}{% endblock %}
+
+{% block content %}
+<p><a href="/">← Назад</a></p>
+<h2>Чат <code>{{ chat_id }}</code></h2>
+
+{% if saved %}
+<div class="flash">✅ Настройки сохранены.</div>
+{% endif %}
+
+<h3>Настройки</h3>
+<form method="post" action="/chats/{{ chat_id }}/config">
+  <label>Таймаут капчи (сек, минимум 30)
+    <input type="number" name="captcha_timeout" value="{{ cfg.captcha_timeout }}" min="30" required>
+  </label>
+  <label>Количество попыток (минимум 1)
+    <input type="number" name="captcha_attempts" value="{{ cfg.captcha_attempts }}" min="1" required>
+  </label>
+  <label>
+    <input type="checkbox" name="enabled" value="on" {% if cfg.get('enabled', True) %}checked{% endif %}>
+    Капча включена
+  </label>
+  <label>Приветственное сообщение (необязательно)
+    <small>Если задано, заменяет стандартное «👋 @username, добро пожаловать!»</small>
+    <textarea name="welcome_text" rows="3" placeholder="Например: 🏠 Привет! Добро пожаловать в наш уютный чат. Пожалуйста, пройди небольшую проверку:">{{ cfg.get('welcome_text') or '' }}</textarea>
+  </label>
+  <button type="submit">Сохранить</button>
+</form>
+
+<h3>Статистика</h3>
+<table>
+  <tr><th>Вступило</th><th>Прошли</th><th>Провалили</th><th>Таймаут</th></tr>
+  <tr>
+    <td class="stat">{{ stats.joined }}</td>
+    <td class="stat" style="color:#2ecc71">{{ stats.passed }}</td>
+    <td class="stat" style="color:#e74c3c">{{ stats.failed }}</td>
+    <td class="stat" style="color:#e67e22">{{ stats.timeout }}</td>
+  </tr>
+</table>
+
+<h3>Замьюченные навсегда ({{ muted_list | length }})</h3>
+{% if muted_list %}
+<table>
+  <thead>
+    <tr><th>User ID</th><th>Действие</th></tr>
+  </thead>
+  <tbody id="muted-table">
+    {% for uid in muted_list %}
+    <tr id="muted-row-{{ uid }}">
+      <td><code>{{ uid }}</code></td>
+      <td>
+        <button
+          hx-post="/chats/{{ chat_id }}/unmute/{{ uid }}"
+          hx-target="#muted-row-{{ uid }}"
+          hx-swap="outerHTML"
+          hx-confirm="Размьютить {{ uid }}? Бот снимет ограничения в Telegram в течение нескольких секунд."
+        >Размьютить</button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p><small>Список не привязан к конкретному чату — замьюченные навсегда не пройдут капчу ни в одном чате бота.</small></p>
+{% else %}
+<p>Список пуст.</p>
+{% endif %}
+{% endblock %}

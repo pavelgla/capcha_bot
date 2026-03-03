@@ -6,6 +6,7 @@ from aiogram import Bot, Dispatcher
 from config import Settings
 from handlers import admin_commands, captcha_callback, new_member
 from middlewares.chat_filter import ChatFilterMiddleware
+from services.mute_manager import unmute_user
 from services.storage import DEFAULT_CHAT_CONFIG, Storage
 
 logging.basicConfig(
@@ -14,6 +15,20 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+async def _unmute_queue_worker(bot: Bot, storage: Storage) -> None:
+    """Background task: processes pending unmute requests from the web panel."""
+    while True:
+        try:
+            result = await storage.pop_unmute_request()
+            if result is not None:
+                chat_id, user_id = result
+                await unmute_user(bot, chat_id, user_id)
+                logger.info("Unmuted user %s in chat %s (via web panel)", user_id, chat_id)
+        except Exception as exc:
+            logger.error("Unmute queue worker error: %s", exc)
+        await asyncio.sleep(2)
 
 
 async def main() -> None:
@@ -51,6 +66,9 @@ async def main() -> None:
 
     configured = await storage.get_all_configured_chats()
     logger.info("Starting captcha_bot — configured chats: %s", configured or "none (use /setup)")
+
+    asyncio.create_task(_unmute_queue_worker(bot, storage))
+
     await dp.start_polling(
         bot,
         allowed_updates=["message", "callback_query", "chat_member"],

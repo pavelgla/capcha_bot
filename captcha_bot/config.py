@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     captcha_timeout: int = 300
     captcha_attempts: int = 2
     redis_url: str = "redis://redis:6379"
+    # Web panel password (plain text, set a strong value in .env)
+    web_secret_key: str = "changeme"
 
     model_config = {
         "env_file": ".env",

@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 
 from aiogram import Bot, F, Router
@@ -77,6 +78,15 @@ async def on_captcha_answer(
 
         await storage.delete_captcha(chat_id, target_user_id)
 
+        await storage.increment_stat(chat_id, "passed")
+        await storage.publish_event({
+            "type": "pass",
+            "chat_id": chat_id,
+            "user_id": target_user_id,
+            "username": mention,
+            "ts": datetime.datetime.utcnow().isoformat(),
+        })
+
         try:
             ok_msg = await bot.send_message(chat_id, f"✅ {mention} прошёл(а) проверку!")
             asyncio.create_task(_auto_delete(bot, chat_id, ok_msg.message_id, 10))
@@ -118,6 +128,15 @@ async def on_captcha_answer(
 
             await storage.set_muted_forever(target_user_id)
             await storage.delete_captcha(chat_id, target_user_id)
+
+            await storage.increment_stat(chat_id, "failed")
+            await storage.publish_event({
+                "type": "fail",
+                "chat_id": chat_id,
+                "user_id": target_user_id,
+                "username": mention,
+                "ts": datetime.datetime.utcnow().isoformat(),
+            })
 
             try:
                 fail_msg = await bot.send_message(

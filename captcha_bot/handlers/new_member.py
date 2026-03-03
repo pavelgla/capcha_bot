@@ -1,15 +1,22 @@
 import asyncio
+import datetime
 import logging
-from typing import Dict
+from typing import Dict, List
 
-from aiogram import Bot, Router
+from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters.chat_member_updated import (
     ChatMemberUpdatedFilter,
     JOIN_TRANSITION,
     LEAVE_TRANSITION,
 )
-from aiogram.types import ChatMemberUpdated, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    ChatMemberUpdated,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    User,
+)
 
 from services.captcha_generator import generate_captcha
 from services.mute_manager import mute_user
@@ -43,21 +50,24 @@ def cancel_timeout(chat_id: int, user_id: int) -> None:
         task.cancel()
 
 
-@router.chat_member(ChatMemberUpdatedFilter(JOIN_TRANSITION))
-async def on_new_member(
-    event: ChatMemberUpdated,
+async def _process_new_member(
     bot: Bot,
     storage: Storage,
+    chat_id: int,
+    user: User,
+    service_message_id: int | None = None,
 ) -> None:
-    user = event.new_chat_member.user
+    """
+    Core logic for handling a new member.
+    Called from both the service-message handler and the chat_member handler.
+    Deduplication: if a captcha already exists for this user, skip silently.
+    """
     if user.is_bot:
         return
 
     user_id = user.id
-    chat_id = event.chat.id
     mention = f"@{user.username}" if user.username else user.full_name
 
-    # Load per-chat config (fall back to defaults if somehow missing)
     chat_cfg = await storage.get_chat_config(chat_id) or DEFAULT_CHAT_CONFIG
     if not chat_cfg.get("enabled", True):
         return
@@ -68,12 +78,24 @@ async def on_new_member(
     # 1. Mute immediately
     await mute_user(bot, chat_id, user_id)
 
+    # Delete service "X joined" message to keep chat clean
+    if service_message_id is not None:
+        try:
+            await bot.delete_message(chat_id, service_message_id)
+        except Exception:
+            pass
+
     # 2. Permanent-mute check
     if await storage.is_muted_forever(user_id):
         logger.info("User %s is muted forever — skipping captcha", user_id)
         return
 
-    # 3. Generate captcha
+    # 3. Deduplication: skip if captcha already sent (e.g. duplicate event)
+    if await storage.get_captcha(chat_id, user_id) is not None:
+        logger.debug("Captcha already exists for user %s in chat %s — skipping", user_id, chat_id)
+        return
+
+    # 4. Generate captcha
     task = generate_captcha()
     captcha_data = {
         "correct_answer": task.correct_answer,
@@ -84,10 +106,12 @@ async def on_new_member(
         "chat_id": chat_id,
     }
 
-    # 4. Send captcha message
+    # 5. Send captcha message
     minutes, seconds = divmod(timeout, 60)
+    welcome_text = chat_cfg.get("welcome_text") or None
+    greeting = welcome_text if welcome_text else f"👋 {mention}, добро пожаловать!"
     text = (
-        f"👋 {mention}, добро пожаловать!\n\n"
+        f"{greeting}\n\n"
         f"Для доступа к чату решите задачку:\n\n"
         f"{task.question}\n\n"
         f"У вас {attempts} попытки. "
@@ -108,16 +132,61 @@ async def on_new_member(
 
     captcha_data["message_id"] = msg.message_id
 
-    # 5. Persist to Redis
+    # 6. Persist to Redis
     await storage.save_captcha(chat_id, user_id, captcha_data, ttl=timeout)
 
-    # 6. Start timeout task
+    # 7. Start timeout task
     cancel_timeout(chat_id, user_id)
     key = _task_key(chat_id, user_id)
     _timeout_tasks[key] = asyncio.create_task(
         _timeout_handler(bot, storage, chat_id, user_id, msg.message_id, timeout)
     )
+    logger.info("Captcha sent to user %s in chat %s", user_id, chat_id)
 
+    # 8. Stats + real-time event
+    await storage.increment_stat(chat_id, "joined")
+    await storage.publish_event({
+        "type": "join",
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "username": mention,
+        "ts": datetime.datetime.utcnow().isoformat(),
+    })
+
+
+# ── Primary handler: service message (works in all group types) ───────────────
+
+@router.message(F.new_chat_members)
+async def on_new_member_message(
+    message: Message,
+    bot: Bot,
+    storage: Storage,
+) -> None:
+    """
+    Triggered by the 'X joined the group' service message.
+    More reliable than chat_member events — works in regular groups and supergroups.
+    """
+    members: List[User] = message.new_chat_members
+    for user in members:
+        await _process_new_member(
+            bot, storage, message.chat.id, user,
+            service_message_id=message.message_id,
+        )
+
+
+# ── Secondary handler: chat_member event (supergroups with admin bot) ─────────
+
+@router.chat_member(ChatMemberUpdatedFilter(JOIN_TRANSITION))
+async def on_new_member_event(
+    event: ChatMemberUpdated,
+    bot: Bot,
+    storage: Storage,
+) -> None:
+    """Fallback: chat_member update. Deduplication prevents double-processing."""
+    await _process_new_member(bot, storage, event.chat.id, event.new_chat_member.user)
+
+
+# ── Leave handler ─────────────────────────────────────────────────────────────
 
 @router.chat_member(ChatMemberUpdatedFilter(LEAVE_TRANSITION))
 async def on_member_left(
@@ -131,6 +200,8 @@ async def on_member_left(
     await storage.delete_captcha(chat_id, user_id)
     logger.info("User %s left chat %s — cancelled pending captcha", user_id, chat_id)
 
+
+# ── Timeout handler ───────────────────────────────────────────────────────────
 
 async def _timeout_handler(
     bot: Bot,
@@ -155,6 +226,14 @@ async def _timeout_handler(
 
         await storage.set_muted_forever(user_id)
         await storage.delete_captcha(chat_id, user_id)
+
+        await storage.increment_stat(chat_id, "timeout")
+        await storage.publish_event({
+            "type": "timeout",
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "ts": datetime.datetime.utcnow().isoformat(),
+        })
 
     except asyncio.CancelledError:
         pass

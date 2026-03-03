@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 import redis.asyncio as aioredis
 
@@ -10,7 +10,11 @@ DEFAULT_CHAT_CONFIG: Dict[str, Any] = {
     "captcha_timeout": 300,
     "captcha_attempts": 2,
     "enabled": True,
+    "welcome_text": None,
 }
+
+_EVENTS_CHANNEL = "captcha_events"
+_UNMUTE_QUEUE = "unmute_queue"
 
 
 class Storage:
@@ -136,3 +140,79 @@ class Storage:
     async def get_muted_forever_list(self) -> List[str]:
         keys = await self.keys("muted_forever:*")
         return [k.split(":", 1)[1] for k in keys]
+
+    # ── Statistics ───────────────────────────────────────────────────────────
+
+    async def increment_stat(self, chat_id: int, stat: str) -> None:
+        """Increment a counter: stat ∈ {joined, passed, failed, timeout}."""
+        if self._use_fallback:
+            key = f"stats:{chat_id}:{stat}"
+            self._fallback[key] = str(int(self._fallback.get(key, "0")) + 1)
+            return
+        try:
+            await self._redis.incr(f"stats:{chat_id}:{stat}")
+        except Exception as exc:
+            logger.error("Redis INCR error: %s", exc)
+
+    async def get_stats(self, chat_id: int) -> Dict[str, int]:
+        result = {}
+        for stat in ("joined", "passed", "failed", "timeout"):
+            raw = await self.get(f"stats:{chat_id}:{stat}")
+            result[stat] = int(raw) if raw else 0
+        return result
+
+    # ── Pub/Sub events ────────────────────────────────────────────────────────
+
+    async def publish_event(self, data: Dict[str, Any]) -> None:
+        """Publish an event to the captcha_events channel."""
+        if self._use_fallback:
+            return  # Pub/Sub not available in fallback mode
+        try:
+            await self._redis.publish(_EVENTS_CHANNEL, json.dumps(data))
+        except Exception as exc:
+            logger.error("Redis PUBLISH error: %s", exc)
+
+    async def subscribe_events(self) -> AsyncGenerator[Dict[str, Any], None]:
+        """Async generator yielding events from the captcha_events channel.
+        Creates its own Redis connection so pub/sub doesn't block main client.
+        """
+        if self._use_fallback:
+            return
+
+        sub_redis = aioredis.from_url(self._redis_url, decode_responses=True)
+        pubsub = sub_redis.pubsub()
+        await pubsub.subscribe(_EVENTS_CHANNEL)
+        try:
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    try:
+                        yield json.loads(message["data"])
+                    except Exception:
+                        pass
+        finally:
+            await pubsub.unsubscribe(_EVENTS_CHANNEL)
+            await sub_redis.aclose()
+
+    # ── Unmute queue ──────────────────────────────────────────────────────────
+
+    async def push_unmute_request(self, chat_id: int, user_id: int) -> None:
+        """Web panel calls this to request an unmute via the bot worker."""
+        if self._use_fallback:
+            return
+        try:
+            await self._redis.rpush(_UNMUTE_QUEUE, f"{chat_id}:{user_id}")
+        except Exception as exc:
+            logger.error("Redis RPUSH error: %s", exc)
+
+    async def pop_unmute_request(self) -> Optional[Tuple[int, int]]:
+        """Bot worker calls this to retrieve the next pending unmute."""
+        if self._use_fallback:
+            return None
+        try:
+            val = await self._redis.lpop(_UNMUTE_QUEUE)
+            if val:
+                chat_id_str, user_id_str = val.split(":", 1)
+                return int(chat_id_str), int(user_id_str)
+        except Exception as exc:
+            logger.error("Redis LPOP error: %s", exc)
+        return None

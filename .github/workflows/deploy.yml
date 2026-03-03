@@ -18,5 +18,5 @@ jobs:
             cd /opt/bots/captcha_bot
             git pull origin main
             cd /opt/bots
-            docker-compose build captcha_bot
-            docker-compose restart captcha_bot
+            docker compose build captcha_bot captcha_web
+            docker compose up -d --force-recreate captcha_bot captcha_web

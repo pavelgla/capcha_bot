@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Дашборд{% endblock %}
+
+{% block content %}
+<h2>Чаты ({{ chats | length }})</h2>
+
+{% if chats %}
+<table>
+  <thead>
+    <tr>
+      <th>Chat ID</th>
+      <th>Статус</th>
+      <th>Таймаут</th>
+      <th>Попыток</th>
+      <th>Вступило</th>
+      <th>Прошли</th>
+      <th>Провалили</th>
+      <th>Таймаут</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in chats %}
+    <tr>
+      <td><code>{{ c.chat_id }}</code></td>
+      <td>
+        {% if c.cfg.get('enabled', True) %}
+          <span class="badge badge-ok">вкл</span>
+        {% else %}
+          <span class="badge badge-off">выкл</span>
+        {% endif %}
+      </td>
+      <td>{{ c.cfg.captcha_timeout }}с</td>
+      <td>{{ c.cfg.captcha_attempts }}</td>
+      <td class="stat">{{ c.stats.joined }}</td>
+      <td class="stat" style="color:#2ecc71">{{ c.stats.passed }}</td>
+      <td class="stat" style="color:#e74c3c">{{ c.stats.failed }}</td>
+      <td class="stat" style="color:#e67e22">{{ c.stats.timeout }}</td>
+      <td><a href="/chats/{{ c.chat_id }}">Настроить</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Нет настроенных чатов. Добавьте бота в чат и напишите <code>/setup</code>.</p>
+{% endif %}
+
+<p>🚫 Замьючено навсегда: <strong>{{ muted_count }}</strong></p>
+
+<hr>
+
+<h3>Лента событий <small style="font-weight:normal;font-size:.75rem;">(реал-тайм)</small></h3>
+<div id="event-feed"
+     hx-ext="sse"
+     sse-connect="/events/stream"
+     sse-swap="message"
+     hx-swap="afterbegin">
+  <p style="color:var(--text-muted)">Ожидание событий…</p>
+</div>
+
+<script>
+// Parse SSE data and render event rows
+document.body.addEventListener("htmx:sseMessage", function(evt) {
+  const feed = document.getElementById("event-feed");
+  // Remove placeholder
+  const placeholder = feed.querySelector("p");
+  if (placeholder) placeholder.remove();
+
+  try {
+    const data = JSON.parse(evt.detail.data);
+    const icons = {join: "👤", pass: "✅", fail: "❌", timeout: "⏱"};
+    const classes = {join: "ev-join", pass: "ev-pass", fail: "ev-fail", timeout: "ev-timeout"};
+    const icon = icons[data.type] || "•";
+    const cls = classes[data.type] || "";
+    const ts = data.ts ? data.ts.substring(11, 19) : "";
+    const who = data.username || ("ID " + data.user_id);
+    const chat = "чат " + data.chat_id;
+
+    const div = document.createElement("div");
+    div.className = cls;
+    div.textContent = `[${ts}] ${icon} ${data.type.toUpperCase()} — ${who} (${chat})`;
+    feed.prepend(div);
+  } catch(e) {}
+});
+</script>
+{% endblock %}

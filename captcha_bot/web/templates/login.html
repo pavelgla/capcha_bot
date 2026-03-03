@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Вход — Captcha Bot Admin</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/water.css@2/out/water.css">
+  <style>
+    body { max-width: 400px; margin: 6rem auto; }
+    h2 { text-align: center; }
+    .error { background: #e74c3c22; border: 1px solid #e74c3c; padding: .5rem 1rem; border-radius: 4px; margin-bottom: 1rem; color: #e74c3c; }
+  </style>
+</head>
+<body>
+  <h2>🤖 Captcha Bot Admin</h2>
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+  <form method="post" action="/login">
+    <label>Пароль
+      <input type="password" name="password" autofocus required>
+    </label>
+    <button type="submit">Войти</button>
+  </form>
+</body>
+</html>
