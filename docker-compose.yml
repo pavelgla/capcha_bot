@@ -1,0 +1,29 @@
+services:
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - ./redis/data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  captcha_bot:
+    build: ./captcha_bot
+    restart: always
+    env_file: ./captcha_bot/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Будущий бот — добавить аналогично:
+  # another_bot:
+  #   build: ./another_bot
+  #   restart: always
+  #   env_file: ./another_bot/.env
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy

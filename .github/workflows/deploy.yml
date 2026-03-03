@@ -1,0 +1,22 @@
+name: Deploy captcha_bot
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /opt/bots/captcha_bot
+            git pull origin main
+            cd /opt/bots
+            docker-compose build captcha_bot
+            docker-compose restart captcha_bot
