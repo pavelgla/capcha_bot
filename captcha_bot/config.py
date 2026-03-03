@@ -12,8 +12,11 @@ class Settings(BaseSettings):
     captcha_timeout: int = 300
     captcha_attempts: int = 2
     redis_url: str = "redis://redis:6379"
-    # Web panel password (plain text, set a strong value in .env)
+    # Web panel — cookie signing key (keep secret)
     web_secret_key: str = "changeme"
+    # Superadmin credentials — used ONLY on first startup to create the account
+    superadmin_username: str = "admin"
+    superadmin_password: str = "changeme-admin"
 
     model_config = {
         "env_file": ".env",

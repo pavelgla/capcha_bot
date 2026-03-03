@@ -37,11 +37,14 @@ async def cmd_setup(
     message: Message, bot: Bot, storage: Storage, settings: Settings
 ) -> None:
     """Activate bot in this chat. Available to any Telegram admin of the chat."""
-    if not await _is_telegram_admin(bot, message.chat.id, message.from_user.id):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+
+    if not await _is_telegram_admin(bot, chat_id, user_id):
         await message.reply("⛔ Только для администраторов чата.")
         return
 
-    existing = await storage.get_chat_config(message.chat.id)
+    existing = await storage.get_chat_config(chat_id)
     if existing:
         await message.reply(
             "ℹ️ Бот уже настроен в этом чате.\n"
@@ -53,14 +56,39 @@ async def cmd_setup(
         "captcha_timeout": settings.captcha_timeout,
         "captcha_attempts": settings.captcha_attempts,
         "enabled": True,
+        "welcome_text": None,
     }
-    await storage.save_chat_config(message.chat.id, config)
-    logger.info("Chat %s configured by admin %s", message.chat.id, message.from_user.id)
+    await storage.save_chat_config(chat_id, config)
+    logger.info("Chat %s configured by admin %s", chat_id, user_id)
+
+    # ── Determine owner and check plan limits ──────────────────────────────
+    owner = await storage.get_user_by_telegram(user_id)
+    if owner is None:
+        owner = settings.superadmin_username  # backward compat: link to superadmin
+
+    user_data = await storage.get_user(owner)
+    if user_data:
+        max_chats = user_data.get("max_chats", 1)
+        if max_chats != -1:
+            current = len(await storage.get_user_chats(owner))
+            if current >= max_chats:
+                # Undo config save — limit exceeded
+                await storage.delete_chat_config(chat_id)
+                await message.reply(
+                    "⛔ Достигнут лимит чатов вашего тарифного плана.\n"
+                    "Обратитесь к администратору сервиса для увеличения лимита."
+                )
+                return
+
+    await storage.set_chat_owner(chat_id, owner)
+    await storage.add_user_chat(owner, chat_id)
+    logger.info("Chat %s linked to account '%s'", chat_id, owner)
 
     await message.reply(
         f"✅ Бот настроен для этого чата!\n\n"
         f"⏱ Таймаут: {config['captcha_timeout']} сек\n"
-        f"🔁 Попыток: {config['captcha_attempts']}\n\n"
+        f"🔁 Попыток: {config['captcha_attempts']}\n"
+        f"👤 Аккаунт: {owner}\n\n"
         f"Доступные команды:\n"
         f"  /chatconfig — текущие настройки\n"
         f"  /setparam timeout 600 — изменить таймаут\n"

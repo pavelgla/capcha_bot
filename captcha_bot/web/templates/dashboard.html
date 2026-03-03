@@ -2,13 +2,14 @@
 {% block title %}Дашборд{% endblock %}
 
 {% block content %}
-<h2>Чаты ({{ chats | length }})</h2>
+<h2>{% if is_superadmin %}Все чаты{% else %}Мои чаты{% endif %} ({{ chats | length }})</h2>
 
 {% if chats %}
 <table>
   <thead>
     <tr>
       <th>Chat ID</th>
+      {% if is_superadmin %}<th>Владелец</th>{% endif %}
       <th>Статус</th>
       <th>Таймаут</th>
       <th>Попыток</th>
@@ -23,6 +24,7 @@
     {% for c in chats %}
     <tr>
       <td><code>{{ c.chat_id }}</code></td>
+      {% if is_superadmin %}<td>{{ c.owner or '—' }}</td>{% endif %}
       <td>
         {% if c.cfg.get('enabled', True) %}
           <span class="badge badge-ok">вкл</span>
@@ -42,7 +44,17 @@
   </tbody>
 </table>
 {% else %}
-<p>Нет настроенных чатов. Добавьте бота в чат и напишите <code>/setup</code>.</p>
+  {% if is_superadmin %}
+    <p>Нет настроенных чатов. Добавьте бота в чат и напишите <code>/setup</code>.</p>
+  {% else %}
+    <p>У вас нет подключённых чатов.</p>
+    <p>Чтобы добавить чат:</p>
+    <ol>
+      <li>Укажите свой Telegram ID в <a href="/account">Личном кабинете</a></li>
+      <li>Добавьте бота в ваш Telegram-чат как администратора</li>
+      <li>Напишите <code>/setup</code> в этом чате</li>
+    </ol>
+  {% endif %}
 {% endif %}
 
 <p>🚫 Замьючено навсегда: <strong>{{ muted_count }}</strong></p>
@@ -59,26 +71,20 @@
 </div>
 
 <script>
-// Parse SSE data and render event rows
 document.body.addEventListener("htmx:sseMessage", function(evt) {
   const feed = document.getElementById("event-feed");
-  // Remove placeholder
   const placeholder = feed.querySelector("p");
   if (placeholder) placeholder.remove();
-
   try {
     const data = JSON.parse(evt.detail.data);
     const icons = {join: "👤", pass: "✅", fail: "❌", timeout: "⏱"};
     const classes = {join: "ev-join", pass: "ev-pass", fail: "ev-fail", timeout: "ev-timeout"};
-    const icon = icons[data.type] || "•";
-    const cls = classes[data.type] || "";
     const ts = data.ts ? data.ts.substring(11, 19) : "";
     const who = data.username || ("ID " + data.user_id);
     const chat = "чат " + data.chat_id;
-
     const div = document.createElement("div");
-    div.className = cls;
-    div.textContent = `[${ts}] ${icon} ${data.type.toUpperCase()} — ${who} (${chat})`;
+    div.className = classes[data.type] || "";
+    div.textContent = `[${ts}] ${icons[data.type] || "•"} ${data.type.toUpperCase()} — ${who} (${chat})`;
     feed.prepend(div);
   } catch(e) {}
 });

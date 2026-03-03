@@ -1,44 +1,29 @@
-"""Simple cookie-based authentication for the web panel."""
+"""Cookie-based authentication for the web panel (multi-user)."""
 from typing import Optional
 
-from fastapi import Cookie, Request
-from fastapi.responses import RedirectResponse
+from fastapi import Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-_COOKIE_NAME = "session"
+COOKIE_NAME = "session"
 _MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+_SALT = "captcha-web-panel-v2"
 
 
 def _signer(secret: str) -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(secret, salt="captcha-web-panel")
+    return URLSafeTimedSerializer(secret, salt=_SALT)
 
 
-def create_session_cookie(secret: str) -> str:
-    return _signer(secret).dumps("admin")
+def create_session_cookie(secret: str, username: str) -> str:
+    """Return a signed cookie value storing the username."""
+    return _signer(secret).dumps(username)
 
 
-def verify_session_cookie(secret: str, cookie: Optional[str]) -> bool:
+def get_session_username(secret: str, request: Request) -> Optional[str]:
+    """Return the username from the signed cookie, or None if invalid/missing."""
+    cookie = request.cookies.get(COOKIE_NAME)
     if not cookie:
-        return False
+        return None
     try:
-        _signer(secret).loads(cookie, max_age=_MAX_AGE)
-        return True
+        return _signer(secret).loads(cookie, max_age=_MAX_AGE)
     except (BadSignature, SignatureExpired):
-        return False
-
-
-def require_auth(secret: str, session: Optional[str] = Cookie(default=None, alias=_COOKIE_NAME)):
-    """Dependency: raises redirect if not authenticated."""
-    if not verify_session_cookie(secret, session):
-        raise _redirect_to_login()
-    return True
-
-
-def _redirect_to_login() -> RedirectResponse:
-    # We raise this; FastAPI treats raised responses as actual responses
-    from fastapi import HTTPException
-    # Can't redirect via dependency raise easily, so we use a workaround in routes
-    raise HTTPException(status_code=307, headers={"Location": "/login"})
-
-
-COOKIE_NAME = _COOKIE_NAME
+        return None

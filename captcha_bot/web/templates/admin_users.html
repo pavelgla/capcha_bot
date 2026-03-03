@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Пользователи{% endblock %}
+
+{% block content %}
+<p><a href="/">← Назад</a></p>
+<h2>Управление пользователями</h2>
+
+{% if error %}
+<div class="flash-err">❌ {{ error }}</div>
+{% elif success %}
+<div class="flash">✅ Пользователь создан.</div>
+{% endif %}
+
+{% if users %}
+<table>
+  <thead>
+    <tr>
+      <th>Логин</th>
+      <th>Роль</th>
+      <th>Тариф</th>
+      <th>Telegram ID</th>
+      <th>Чатов</th>
+      <th>Создан</th>
+      <th>Действия</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td><strong>{{ u.username }}</strong></td>
+      <td>
+        {% if u.role == 'superadmin' %}
+          <span class="badge badge-pro">superadmin</span>
+        {% else %}
+          user
+        {% endif %}
+      </td>
+      <td>
+        <span class="badge {% if u.plan == 'pro' %}badge-pro{% else %}badge-free{% endif %}">
+          {{ u.plan }} {% if u.max_chats == -1 %}(∞){% else %}({{ u.max_chats }}){% endif %}
+        </span>
+      </td>
+      <td><code>{{ u.telegram_id or '—' }}</code></td>
+      <td>{{ u.chat_count }}</td>
+      <td style="font-size:.8rem">{{ (u.created_at or '')[:10] }}</td>
+      <td>
+        {% if u.role != 'superadmin' %}
+        <details style="display:inline">
+          <summary style="cursor:pointer">Изменить</summary>
+          <form method="post" action="/admin/users/{{ u.username }}/update" style="margin-top:.5rem">
+            <label style="font-size:.85rem">Тариф
+              <select name="plan">
+                <option value="free" {% if u.plan == 'free' %}selected{% endif %}>free (1 чат)</option>
+                <option value="pro" {% if u.plan == 'pro' %}selected{% endif %}>pro (безлимит)</option>
+              </select>
+            </label>
+            <label style="font-size:.85rem">Telegram ID
+              <input type="text" name="telegram_id" value="{{ u.telegram_id or '' }}" style="width:120px">
+            </label>
+            <button type="submit" style="font-size:.8rem">Сохранить</button>
+          </form>
+        </details>
+        &nbsp;
+        <form method="post" action="/admin/users/{{ u.username }}/delete" style="display:inline"
+              onsubmit="return confirm('Удалить пользователя {{ u.username }}?')">
+          <button type="submit" style="background:#e74c3c;font-size:.8rem">Удалить</button>
+        </form>
+        {% else %}
+          <em style="font-size:.8rem;opacity:.6">нельзя изменить</em>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Нет пользователей.</p>
+{% endif %}
+
+<hr>
+<h3>Создать пользователя</h3>
+<form method="post" action="/admin/users/create">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+    <label>Логин (строчные буквы)
+      <input type="text" name="new_username" required pattern="[a-z0-9_]+" placeholder="ivan">
+    </label>
+    <label>Пароль
+      <input type="password" name="new_password" required minlength="6">
+    </label>
+    <label>Тариф
+      <select name="plan">
+        <option value="free">free (1 чат)</option>
+        <option value="pro">pro (безлимит)</option>
+      </select>
+    </label>
+    <label>Telegram ID (необязательно)
+      <input type="text" name="telegram_id" placeholder="134445625">
+    </label>
+  </div>
+  <button type="submit" style="margin-top:.5rem">Создать</button>
+</form>
+{% endblock %}

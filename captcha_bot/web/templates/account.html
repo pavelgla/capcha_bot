@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Личный кабинет{% endblock %}
+
+{% block content %}
+<p><a href="/">← Назад</a></p>
+<h2>Личный кабинет</h2>
+
+{% if saved %}
+<div class="flash">✅ Изменения сохранены.</div>
+{% endif %}
+{% if error %}
+<div class="flash-err">❌ {{ error }}</div>
+{% endif %}
+
+<h3>Профиль</h3>
+<table>
+  <tr><th>Логин</th><td><strong>{{ user.username }}</strong></td></tr>
+  <tr><th>Роль</th><td>{{ user.role }}</td></tr>
+  <tr><th>Тариф</th><td>{{ user.plan }} {% if user.max_chats == -1 %}(безлимит){% else %}(макс. {{ user.max_chats }} чат){% endif %}</td></tr>
+  <tr><th>Telegram ID</th><td><code>{{ user.telegram_id or 'не задан' }}</code></td></tr>
+</table>
+
+<h3>Мой Telegram ID</h3>
+<p>Нужен для автоматической привязки чатов через <code>/setup</code>.<br>
+Узнать свой ID: напишите <code>/start</code> боту <a href="https://t.me/userinfobot" target="_blank">@userinfobot</a>.</p>
+
+<form method="post" action="/account/telegram">
+  <label>Telegram ID
+    <input type="text" name="telegram_id" value="{{ user.telegram_id or '' }}" placeholder="134445625">
+  </label>
+  <button type="submit">Сохранить</button>
+</form>
+
+<hr>
+
+<h3>Сменить пароль</h3>
+<form method="post" action="/account/password">
+  <label>Текущий пароль
+    <input type="password" name="current_password" required autocomplete="current-password">
+  </label>
+  <label>Новый пароль (минимум 6 символов)
+    <input type="password" name="new_password" required minlength="6" autocomplete="new-password">
+  </label>
+  <button type="submit">Изменить пароль</button>
+</form>
+
+<hr>
+<h3>Мои чаты</h3>
+<p><a href="/">Перейти к дашборду →</a></p>
+{% endblock %}

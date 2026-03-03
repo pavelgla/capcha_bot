@@ -216,3 +216,84 @@ class Storage:
         except Exception as exc:
             logger.error("Redis LPOP error: %s", exc)
         return None
+
+    # ── User accounts ─────────────────────────────────────────────────────────
+
+    async def create_user(self, username: str, data: Dict[str, Any]) -> None:
+        await self.set(f"user:{username}", json.dumps(data))
+        if not self._use_fallback:
+            try:
+                await self._redis.sadd("users", username)
+            except Exception as exc:
+                logger.error("Redis SADD users error: %s", exc)
+
+    async def get_user(self, username: str) -> Optional[Dict[str, Any]]:
+        raw = await self.get(f"user:{username}")
+        return json.loads(raw) if raw else None
+
+    async def update_user(self, username: str, data: Dict[str, Any]) -> None:
+        await self.set(f"user:{username}", json.dumps(data))
+
+    async def delete_user(self, username: str) -> None:
+        await self.delete(f"user:{username}")
+        if not self._use_fallback:
+            try:
+                await self._redis.srem("users", username)
+            except Exception as exc:
+                logger.error("Redis SREM users error: %s", exc)
+
+    async def list_users(self) -> List[str]:
+        if self._use_fallback:
+            return []
+        try:
+            return list(await self._redis.smembers("users"))
+        except Exception as exc:
+            logger.error("Redis SMEMBERS users error: %s", exc)
+            return []
+
+    async def user_exists(self, username: str) -> bool:
+        return await self.exists(f"user:{username}")
+
+    # ── Telegram ID ↔ username ────────────────────────────────────────────────
+
+    async def set_telegram_mapping(self, telegram_id: int, username: str) -> None:
+        await self.set(f"telegram_to_user:{telegram_id}", username)
+
+    async def get_user_by_telegram(self, telegram_id: int) -> Optional[str]:
+        return await self.get(f"telegram_to_user:{telegram_id}")
+
+    async def remove_telegram_mapping(self, telegram_id: int) -> None:
+        await self.delete(f"telegram_to_user:{telegram_id}")
+
+    # ── Chat ownership ────────────────────────────────────────────────────────
+
+    async def set_chat_owner(self, chat_id: int, username: str) -> None:
+        await self.set(f"chat_owner:{chat_id}", username)
+
+    async def get_chat_owner(self, chat_id: int) -> Optional[str]:
+        return await self.get(f"chat_owner:{chat_id}")
+
+    async def add_user_chat(self, username: str, chat_id: int) -> None:
+        if not self._use_fallback:
+            try:
+                await self._redis.sadd(f"user_chats:{username}", str(chat_id))
+                return
+            except Exception as exc:
+                logger.error("Redis SADD user_chats error: %s", exc)
+
+    async def remove_user_chat(self, username: str, chat_id: int) -> None:
+        if not self._use_fallback:
+            try:
+                await self._redis.srem(f"user_chats:{username}", str(chat_id))
+                return
+            except Exception as exc:
+                logger.error("Redis SREM user_chats error: %s", exc)
+
+    async def get_user_chats(self, username: str) -> List[int]:
+        if not self._use_fallback:
+            try:
+                members = await self._redis.smembers(f"user_chats:{username}")
+                return [int(m) for m in members]
+            except Exception as exc:
+                logger.error("Redis SMEMBERS user_chats error: %s", exc)
+        return []
