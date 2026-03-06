@@ -191,12 +191,21 @@ async def on_new_member_event(
 @router.chat_member(ChatMemberUpdatedFilter(LEAVE_TRANSITION))
 async def on_member_left(
     event: ChatMemberUpdated,
+    bot: Bot,
     storage: Storage,
 ) -> None:
     """Cancel pending captcha when a user leaves before solving it."""
     user_id = event.old_chat_member.user.id
     chat_id = event.chat.id
     cancel_timeout(chat_id, user_id)
+
+    captcha_data = await storage.get_captcha(chat_id, user_id)
+    if captcha_data and captcha_data.get("message_id"):
+        try:
+            await bot.delete_message(chat_id, captcha_data["message_id"])
+        except Exception as exc:
+            logger.warning("Could not delete captcha message on leave: %s", exc)
+
     await storage.delete_captcha(chat_id, user_id)
     logger.info("User %s left chat %s — cancelled pending captcha", user_id, chat_id)
 
