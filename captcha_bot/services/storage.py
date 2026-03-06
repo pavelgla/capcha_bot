@@ -111,6 +111,21 @@ class Storage:
 
     # ── Captcha (composite key: chat_id + user_id) ───────────────────────────
 
+    async def claim_captcha_slot(self, chat_id: int, user_id: int, ttl: int) -> bool:
+        """Atomically claim a captcha slot. Returns True if claimed, False if already exists."""
+        key = f"captcha:{chat_id}:{user_id}"
+        if self._use_fallback:
+            if key in self._fallback:
+                return False
+            self._fallback[key] = "{}"
+            return True
+        try:
+            result = await self._redis.set(key, "{}", ex=ttl, nx=True)
+            return result is not None
+        except Exception as exc:
+            logger.error("Redis SET NX error: %s", exc)
+            return False
+
     async def save_captcha(
         self, chat_id: int, user_id: int, data: Dict[str, Any], ttl: int
     ) -> None:

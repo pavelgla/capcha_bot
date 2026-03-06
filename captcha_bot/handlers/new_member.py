@@ -90,9 +90,9 @@ async def _process_new_member(
         logger.info("User %s is muted forever — skipping captcha", user_id)
         return
 
-    # 3. Deduplication: skip if captcha already sent (e.g. duplicate event)
-    if await storage.get_captcha(chat_id, user_id) is not None:
-        logger.debug("Captcha already exists for user %s in chat %s — skipping", user_id, chat_id)
+    # 3. Atomically claim slot — prevents double-captcha on duplicate events
+    if not await storage.claim_captcha_slot(chat_id, user_id, ttl=timeout):
+        logger.debug("Captcha slot already claimed for user %s in chat %s — skipping", user_id, chat_id)
         return
 
     # 4. Generate captcha

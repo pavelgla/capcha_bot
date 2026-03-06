@@ -52,36 +52,30 @@ chmod +x setup.sh && sudo ./setup.sh
 ### 4. Клонировать репозиторий на сервер
 
 ```bash
-git clone https://github.com/<your-username>/<repo>.git /opt/bots/captcha_bot
+git clone https://github.com/<your-username>/<repo>.git /opt/bots/captcha_bot_repo
 ```
 
 ### 5. Создать .env
 
 ```bash
-cp /opt/bots/captcha_bot/.env.example /opt/bots/captcha_bot/.env
-nano /opt/bots/captcha_bot/.env
+cp /opt/bots/captcha_bot_repo/captcha_bot/.env.example /opt/bots/captcha_bot_repo/captcha_bot/.env
+nano /opt/bots/captcha_bot_repo/captcha_bot/.env
 ```
 
 Заполнить все переменные (см. [.env.example](captcha_bot/.env.example)).
 
-### 6. Скопировать docker-compose.yml
+### 6. Запустить
 
 ```bash
-cp /opt/bots/captcha_bot/docker-compose.yml /opt/bots/docker-compose.yml
-```
-
-### 7. Запустить
-
-```bash
-cd /opt/bots
-docker-compose up -d
+cd /opt/bots/captcha_bot_repo
+docker compose up -d
 ```
 
 Проверить статус:
 
 ```bash
-docker-compose ps
-docker-compose logs -f captcha_bot
+docker compose ps
+docker compose logs -f captcha_bot
 ```
 
 ---
@@ -111,15 +105,15 @@ cat ~/.ssh/github_actions.pub >> ~/.ssh/authorized_keys
 
 Теперь каждый `git push` в ветку `main` автоматически:
 1. Подключается к серверу по SSH
-2. Делает `git pull` в `/opt/bots/captcha_bot`
+2. Делает `git pull` в `/opt/bots/captcha_bot_repo`
 3. Пересобирает и перезапускает контейнер `captcha_bot`
 
 ---
 
 ## Как добавить второго бота
 
-1. Создать папку `/opt/bots/another_bot/` и задеплоить туда код
-2. Добавить секцию в `/opt/bots/docker-compose.yml`:
+1. Создать папку `/opt/bots/captcha_bot_repo/another_bot/` и задеплоить туда код
+2. Добавить секцию в `/opt/bots/captcha_bot_repo/docker-compose.yml`:
 
 ```yaml
   another_bot:
@@ -131,7 +125,7 @@ cat ~/.ssh/github_actions.pub >> ~/.ssh/authorized_keys
         condition: service_healthy
 ```
 
-3. Создать `/opt/bots/another_bot/.env` с токеном нового бота
+3. Создать `/opt/bots/captcha_bot_repo/another_bot/.env` с токеном нового бота
 4. Создать `.github/workflows/deploy.yml` в репозитории нового бота:
 
 ```yaml
@@ -152,11 +146,11 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /opt/bots/another_bot
+            cd /opt/bots/captcha_bot_repo/another_bot
             git pull origin main
-            cd /opt/bots
-            docker-compose build another_bot
-            docker-compose restart another_bot
+            cd /opt/bots/captcha_bot_repo
+            docker compose build another_bot
+            docker compose restart another_bot
 ```
 
 5. Добавить те же GitHub Secrets (`SERVER_HOST`, `SERVER_USER`, `SERVER_SSH_KEY`)
@@ -169,23 +163,23 @@ jobs:
 
 ```bash
 # Статус всех контейнеров
-cd /opt/bots && docker-compose ps
+cd /opt/bots/captcha_bot_repo && docker compose ps
 
 # Логи бота в реальном времени
-docker-compose logs -f captcha_bot
+docker compose logs -f captcha_bot
 
 # Перезапустить бота вручную
-docker-compose restart captcha_bot
+docker compose restart captcha_bot
 
 # Обновить вручную без CI/CD
-cd /opt/bots/captcha_bot && git pull
-cd /opt/bots && docker-compose build captcha_bot && docker-compose restart captcha_bot
+cd /opt/bots/captcha_bot_repo && git pull
+docker compose build captcha_bot && docker compose restart captcha_bot
 
 # Остановить всё
-docker-compose down
+docker compose down
 
 # Остановить и удалить данные Redis (осторожно!)
-docker-compose down -v
+docker compose down -v
 ```
 
 ## Команды администратора в чате
@@ -202,11 +196,14 @@ docker-compose down -v
 
 ```
 /opt/bots/
-├── docker-compose.yml       ← управление всеми ботами
-├── redis/data/              ← данные Redis (persist)
-├── captcha_bot/             ← git clone сюда
-│   ├── .env                 ← ТОЛЬКО на сервере, не в git!
-│   └── ...
-└── another_bot/             ← будущие боты
-    └── .env
+└── captcha_bot_repo/            ← git clone сюда
+    ├── docker-compose.yml       ← управление всеми ботами
+    ├── captcha_bot/             ← код бота
+    │   ├── .env                 ← ТОЛЬКО на сервере, не в git!
+    │   └── ...
+    ├── nginx/
+    ├── redis/
+    │   └── data/                ← данные Redis (persist)
+    └── another_bot/             ← будущие боты
+        └── .env
 ```

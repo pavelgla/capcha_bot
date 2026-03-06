@@ -24,8 +24,19 @@ services:
     restart: always
     command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8080"]
     env_file: ./captcha_bot/.env
-    ports:
-      - "127.0.0.1:8080:8080"
     depends_on:
       redis:
         condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - /opt/runstart/certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      - captcha_web

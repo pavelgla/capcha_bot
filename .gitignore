@@ -36,3 +36,6 @@ redis/data/
 # OS
 .DS_Store
 Thumbs.db
+
+# SSL сертификаты — не коммитить
+nginx/ssl/
