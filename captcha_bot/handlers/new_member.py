@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import logging
+import time
 from typing import Dict, List
 
 from aiogram import Bot, F, Router
@@ -134,6 +135,7 @@ async def _process_new_member(
 
     # 6. Persist to Redis
     await storage.save_captcha(chat_id, user_id, captcha_data, ttl=timeout)
+    await storage.add_captcha_message(chat_id, msg.message_id, time.time())
 
     # 7. Start timeout task
     cancel_timeout(chat_id, user_id)
@@ -205,6 +207,7 @@ async def on_member_left(
             await bot.delete_message(chat_id, captcha_data["message_id"])
         except Exception as exc:
             logger.warning("Could not delete captcha message on leave: %s", exc)
+        await storage.remove_captcha_message(chat_id, captcha_data["message_id"])
 
     await storage.delete_captcha(chat_id, user_id)
     logger.info("User %s left chat %s — cancelled pending captcha", user_id, chat_id)
@@ -250,6 +253,7 @@ async def _timeout_handler(
             await bot.delete_message(chat_id, message_id)
         except Exception as exc:
             logger.warning("Could not delete captcha message: %s", exc)
+        await storage.remove_captcha_message(chat_id, message_id)
 
         await storage.set_muted_forever(user_id)
         await storage.delete_captcha(chat_id, user_id)

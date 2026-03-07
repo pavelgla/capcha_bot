@@ -161,6 +161,54 @@ class Storage:
             result.append((chat_id, user_id, data, ttl))
         return result
 
+    # ── Captcha message tracking (for stale cleanup) ─────────────────────
+
+    async def add_captcha_message(self, chat_id: int, message_id: int, sent_at: float) -> None:
+        """Record a sent captcha message with its timestamp."""
+        key = f"captcha_msgs:{chat_id}"
+        if self._use_fallback:
+            raw = self._fallback.get(key, "{}")
+            data = json.loads(raw)
+            data[str(message_id)] = str(sent_at)
+            self._fallback[key] = json.dumps(data)
+            return
+        try:
+            await self._redis.hset(key, str(message_id), str(sent_at))
+            await self._redis.expire(key, 86400)
+        except Exception as exc:
+            logger.error("Redis HSET captcha_msgs error: %s", exc)
+
+    async def remove_captcha_message(self, chat_id: int, message_id: int) -> None:
+        """Remove a captcha message from tracking."""
+        key = f"captcha_msgs:{chat_id}"
+        if self._use_fallback:
+            raw = self._fallback.get(key, "{}")
+            data = json.loads(raw)
+            data.pop(str(message_id), None)
+            self._fallback[key] = json.dumps(data)
+            return
+        try:
+            await self._redis.hdel(key, str(message_id))
+        except Exception as exc:
+            logger.error("Redis HDEL captcha_msgs error: %s", exc)
+
+    async def get_all_captcha_message_chats(self) -> List[int]:
+        """Return all chat_ids that have tracked captcha messages."""
+        keys = await self.keys("captcha_msgs:*")
+        return [int(k.split(":", 1)[1]) for k in keys]
+
+    async def get_captcha_messages(self, chat_id: int) -> Dict[str, str]:
+        """Return {message_id_str: sent_at_str} for a chat."""
+        key = f"captcha_msgs:{chat_id}"
+        if self._use_fallback:
+            raw = self._fallback.get(key, "{}")
+            return json.loads(raw)
+        try:
+            return await self._redis.hgetall(key)
+        except Exception as exc:
+            logger.error("Redis HGETALL captcha_msgs error: %s", exc)
+            return {}
+
     # ── Permanent mute ───────────────────────────────────────────────────────
 
     async def set_muted_forever(self, user_id: int) -> None:

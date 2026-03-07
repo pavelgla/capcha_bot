@@ -75,6 +75,7 @@ async def on_captcha_answer(
             await bot.delete_message(chat_id, message_id)
         except Exception as exc:
             logger.warning("Could not delete captcha message: %s", exc)
+        await storage.remove_captcha_message(chat_id, message_id)
 
         await storage.delete_captcha(chat_id, target_user_id)
 
@@ -125,6 +126,7 @@ async def on_captcha_answer(
                 await bot.delete_message(chat_id, message_id)
             except Exception as exc:
                 logger.warning("Could not delete captcha message: %s", exc)
+            await storage.remove_captcha_message(chat_id, message_id)
 
             await storage.set_muted_forever(target_user_id)
             await storage.delete_captcha(chat_id, target_user_id)

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 
 from aiogram import Bot, Dispatcher
 
@@ -15,6 +16,28 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+async def _stale_captcha_cleanup(bot: Bot, storage: Storage) -> None:
+    """Every 10 minutes: delete captcha messages older than 10 minutes."""
+    while True:
+        await asyncio.sleep(600)
+        try:
+            chat_ids = await storage.get_all_captcha_message_chats()
+            now = time.time()
+            for chat_id in chat_ids:
+                messages = await storage.get_captcha_messages(chat_id)
+                for msg_id_str, sent_at_str in messages.items():
+                    if now - float(sent_at_str) > 600:
+                        message_id = int(msg_id_str)
+                        try:
+                            await bot.delete_message(chat_id, message_id)
+                            logger.info("Cleanup: deleted stale captcha message %s in chat %s", message_id, chat_id)
+                        except Exception as exc:
+                            logger.warning("Cleanup: could not delete message %s: %s", message_id, exc)
+                        await storage.remove_captcha_message(chat_id, message_id)
+        except Exception as exc:
+            logger.error("Stale captcha cleanup error: %s", exc)
 
 
 async def _unmute_queue_worker(bot: Bot, storage: Storage) -> None:
@@ -68,6 +91,7 @@ async def main() -> None:
     logger.info("Starting captcha_bot — configured chats: %s", configured or "none (use /setup)")
 
     asyncio.create_task(_unmute_queue_worker(bot, storage))
+    asyncio.create_task(_stale_captcha_cleanup(bot, storage))
 
     await new_member.restore_pending_captchas(bot, storage)
 
