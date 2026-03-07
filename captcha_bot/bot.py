@@ -69,6 +69,8 @@ async def main() -> None:
 
     asyncio.create_task(_unmute_queue_worker(bot, storage))
 
+    await new_member.restore_pending_captchas(bot, storage)
+
     await dp.start_polling(
         bot,
         allowed_updates=["message", "callback_query", "chat_member"],

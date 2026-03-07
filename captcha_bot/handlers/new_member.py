@@ -212,6 +212,24 @@ async def on_member_left(
 
 # ── Timeout handler ───────────────────────────────────────────────────────────
 
+async def restore_pending_captchas(bot: Bot, storage: Storage) -> None:
+    """On startup: reschedule timeout tasks for captchas that survived a bot restart."""
+    pending = await storage.get_all_pending_captchas()
+    for chat_id, user_id, data, remaining_ttl in pending:
+        message_id = data["message_id"]
+        key = _task_key(chat_id, user_id)
+        if key not in _timeout_tasks:
+            _timeout_tasks[key] = asyncio.create_task(
+                _timeout_handler(bot, storage, chat_id, user_id, message_id, remaining_ttl)
+            )
+            logger.info(
+                "Restored timeout task for user %s in chat %s (remaining: %ds)",
+                user_id, chat_id, remaining_ttl,
+            )
+    if pending:
+        logger.info("Restored %d pending captcha(s) after restart", len(pending))
+
+
 async def _timeout_handler(
     bot: Bot,
     storage: Storage,

@@ -138,6 +138,29 @@ class Storage:
     async def delete_captcha(self, chat_id: int, user_id: int) -> None:
         await self.delete(f"captcha:{chat_id}:{user_id}")
 
+    async def get_all_pending_captchas(self) -> List[Tuple[int, int, Dict[str, Any], int]]:
+        """Return list of (chat_id, user_id, data, remaining_ttl_seconds) for all active captchas."""
+        keys = await self.keys("captcha:*")
+        result = []
+        for key in keys:
+            parts = key.split(":")
+            if len(parts) != 3:
+                continue
+            chat_id, user_id = int(parts[1]), int(parts[2])
+            data = await self.get_captcha(chat_id, user_id)
+            if not data or not data.get("message_id"):
+                continue
+            ttl = 1
+            if not self._use_fallback and self._redis:
+                try:
+                    ttl = await self._redis.ttl(key)
+                    if ttl <= 0:
+                        ttl = 1
+                except Exception as exc:
+                    logger.error("Redis TTL error: %s", exc)
+            result.append((chat_id, user_id, data, ttl))
+        return result
+
     # ── Permanent mute ───────────────────────────────────────────────────────
 
     async def set_muted_forever(self, user_id: int) -> None:
