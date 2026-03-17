@@ -22,7 +22,7 @@ services:
   captcha_web:
     build: ./captcha_bot
     restart: always
-    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "8080"]
+    command: ["uvicorn", "web.app:app", "--host", "0.0.0.0", "--port", "3003"]
     env_file: ./captcha_bot/.env
     depends_on:
       redis:
@@ -40,3 +40,12 @@ services:
       - /opt/runstart/certbot/conf:/etc/letsencrypt:ro
     depends_on:
       - captcha_web
+    networks:
+      - default
+      - midgard_net
+
+networks:
+  default:
+  midgard_net:
+    external: true
+    name: sites_default

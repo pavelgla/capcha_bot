@@ -1,54 +1,41 @@
 # Процесс разработки и деплоя
 
-## Сервера
+## Сервер
 
-| Роль | Адрес |
-|------|-------|
-| Разработка | текущий сервер, `/opt/bots/captcha_bot_repo/` |
-| Продакшн | `194.87.133.24`, `/opt/bots/captcha_bot_repo/` |
+Бот работает на единственном сервере: `72.56.112.182`, путь `/opt/bots/captcha_bot_repo/`.
 
-## Разработка → GitHub
+## Workflow
 
 ```bash
 cd /opt/bots/captcha_bot_repo
+
+# 1. Закоммитить и запушить
 git add -A
 git commit -m "описание изменений"
 git push origin main
+
+# 2. Применить изменения
+docker compose up -d --build   # если менялся Dockerfile или requirements.txt
+docker compose up -d           # иначе (быстрее)
 ```
 
-## Деплой на продакшн
-
-Зайти на прод:
-```bash
-ssh root@194.87.133.24
-```
-
-Задеплоить:
-```bash
-/opt/bots/deploy.sh
-```
-
-Скрипт сам определяет нужна ли пересборка образов:
-- если изменился `Dockerfile` или `requirements.txt` — выполняет `docker compose up -d --build`
-- иначе — просто `docker compose up -d` (быстрее, без обращения к Docker Hub)
-
-## Что НЕ хранится в git (хранится только на серверах)
+## Что НЕ хранится в git (хранится только на сервере)
 
 - `captcha_bot/.env` — токен бота и секреты
 - `nginx/ssl/` — SSL-сертификаты
 - `redis/data/` — данные Redis
 
-## Полезные команды на проде
+## Полезные команды
 
 ```bash
-# Посмотреть статус контейнеров
-docker compose -f /opt/bots/captcha_bot_repo/docker-compose.yml ps
+# Статус контейнеров
+docker compose ps
 
 # Логи бота
-docker compose -f /opt/bots/captcha_bot_repo/docker-compose.yml logs -f captcha_bot
+docker compose logs -f captcha_bot
 
 # Перезапустить всё
-docker compose -f /opt/bots/captcha_bot_repo/docker-compose.yml restart
+docker compose restart
 ```
 
 ## Репозиторий
