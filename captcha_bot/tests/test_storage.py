@@ -48,17 +48,17 @@ async def test_exists():
 async def test_save_and_get_captcha():
     s = _make_storage()
     data = {"correct_answer": 42, "attempts_left": 2, "message_id": 99, "task_text": "2+2?", "options": [42, 4, 6, 8]}
-    await s.save_captcha(111, data, ttl=300)
-    result = await s.get_captcha(111)
+    await s.save_captcha(1, 111, data, ttl=300)
+    result = await s.get_captcha(1, 111)
     assert result == data
 
 
 @pytest.mark.asyncio
 async def test_delete_captcha():
     s = _make_storage()
-    await s.save_captcha(222, {"correct_answer": 5}, ttl=300)
-    await s.delete_captcha(222)
-    assert await s.get_captcha(222) is None
+    await s.save_captcha(1, 222, {"correct_answer": 5}, ttl=300)
+    await s.delete_captcha(1, 222)
+    assert await s.get_captcha(1, 222) is None
 
 
 # ── Muted-forever helpers ────────────────────────────────────────────────────
